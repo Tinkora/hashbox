@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hashbox — 在线哈希工具箱</title>
+<meta name="description" content="浏览器原生的多算法哈希工具箱。支持 SHA-256、SHA-512、MD5、BLAKE3，全部在 WASM 中计算，不上传任何数据。">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0F172A; --surface: #1E293B; --surface2: #334155;
+    --cta: #22C55E; --cta-hover: #16A34A;
+    --text: #F8FAFC; --text-muted: #94A3B8; --accent: #3B82F6;
+    --danger: #EF4444; --warn: #F59E0B;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-body); background: var(--bg); color: var(--text);
+    line-height: 1.6; min-height: 100vh;
+  }
+  h1, h2, h3 { font-family: var(--font-mono); font-weight: 600; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── header ── */
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--surface2);
+    padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+    position: sticky; top: 0; z-index: 20;
+  }
+  header .logo {
+    font-family: var(--font-mono); font-size: 1.15rem; font-weight: 700;
+    color: var(--cta);
+  }
+  header .subtitle { color: var(--text-muted); font-size: .85rem; }
+
+  /* ── main layout ── */
+  main {
+    max-width: 960px; margin: 0 auto; padding: 32px 24px 64px;
+    display: flex; flex-direction: column; gap: 32px;
+  }
+
+  /* ── cards ── */
+  .card {
+    background: var(--surface); border: 1px solid var(--surface2);
+    border-radius: 12px; padding: 24px;
+  }
+  .card h2 { font-size: 1.15rem; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .icon { font-size: 1.3rem; }
+
+  /* ── algorithm selector ── */
+  .alg-selector { display: flex; gap: 8px; flex-wrap: wrap; }
+  .alg-chip {
+    padding: 8px 16px; border-radius: 8px; border: 1px solid var(--surface2);
+    background: transparent; color: var(--text-muted); cursor: pointer;
+    font-family: var(--font-mono); font-size: .85rem; font-weight: 500;
+    transition: all .15s;
+  }
+  .alg-chip:hover { border-color: var(--cta); color: var(--text); }
+  .alg-chip.active {
+    background: rgb(34 197 94 / .12); border-color: var(--cta); color: var(--cta);
+  }
+
+  /* ── text input ── */
+  textarea {
+    width: 100%; min-height: 120px; padding: 12px 16px;
+    background: var(--bg); color: var(--text); border: 1px solid var(--surface2);
+    border-radius: 8px; font-family: var(--font-body); font-size: .95rem;
+    line-height: 1.5; resize: vertical; outline: none; transition: border-color .15s;
+  }
+  textarea:focus { border-color: var(--accent); }
+
+  /* ── drop zone ── */
+  .drop-zone {
+    border: 2px dashed var(--surface2); border-radius: 12px;
+    padding: 36px 24px; text-align: center; transition: all .2s;
+    cursor: pointer; color: var(--text-muted);
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--cta); background: rgb(34 197 94 / .06); color: var(--text);
+  }
+  .drop-zone .browse { color: var(--accent); cursor: pointer; text-decoration: underline; }
+  .drop-zone .filename { margin-top: 8px; font-family: var(--font-mono); font-size: .85rem; color: var(--cta); }
+
+  /* ── result area ── */
+  .result-box {
+    background: var(--bg); border: 1px solid var(--surface2); border-radius: 8px;
+    padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+    font-family: var(--font-mono); font-size: .85rem; word-break: break-all;
+  }
+  .result-box .label { color: var(--text-muted); white-space: nowrap; font-size: .8rem; }
+  .result-box .value { flex: 1; color: var(--cta); }
+  .result-box .copy-btn {
+    background: var(--surface2); border: none; color: var(--text-muted);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    font-family: var(--font-mono); font-size: .75rem; white-space: nowrap;
+    transition: all .15s;
+  }
+  .result-box .copy-btn:hover { background: var(--cta); color: var(--bg); }
+
+  /* ── HMAC section ── */
+  .hmac-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  .hmac-grid .full { grid-column: 1 / -1; }
+  .input-group label {
+    display: block; font-size: .85rem; color: var(--text-muted); margin-bottom: 6px;
+  }
+  .input-group input {
+    width: 100%; padding: 10px 12px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--surface2); border-radius: 8px;
+    font-family: var(--font-mono); font-size: .9rem; outline: none;
+    transition: border-color .15s;
+  }
+  .input-group input:focus { border-color: var(--accent); }
+
+  /* ── toast ── */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--cta); color: var(--bg); padding: 10px 24px;
+    border-radius: 8px; font-family: var(--font-mono); font-size: .85rem;
+    font-weight: 600; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+
+  /* ── footer ── */
+  footer {
+    text-align: center; padding: 32px 24px; border-top: 1px solid var(--surface2);
+    color: var(--text-muted); font-size: .8rem;
+  }
+
+  /* ── responsive ── */
+  @media (max-width: 640px) {
+    .hmac-grid { grid-template-columns: 1fr; }
+    main { padding: 20px 12px 48px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo"># hashbox</span>
+  <span class="subtitle">浏览器原生哈希工具箱 · 隐私优先 · 不上传任何数据</span>
+</header>
+
+<main>
+
+  <!-- Algorithm selector -->
+  <div class="card">
+    <h2><span class="icon">🔢</span> 选择算法</h2>
+    <div class="alg-selector" id="alg-selector">
+      <button class="alg-chip active" data-alg="sha256">SHA-256</button>
+      <button class="alg-chip" data-alg="sha384">SHA-384</button>
+      <button class="alg-chip" data-alg="sha512">SHA-512</button>
+      <button class="alg-chip" data-alg="md5">MD5</button>
+      <button class="alg-chip" data-alg="blake3">BLAKE3</button>
+    </div>
+  </div>
+
+  <!-- Text hashing -->
+  <div class="card">
+    <h2><span class="icon">📝</span> 文本哈希</h2>
+    <textarea id="text-input" placeholder="在此输入文本，实时计算哈希值…" autofocus></textarea>
+    <div class="result-box" style="margin-top:12px;">
+      <span class="label" id="text-alg-label">SHA-256</span>
+      <span class="value" id="text-result">—</span>
+      <button class="copy-btn" id="text-copy-btn" disabled>复制</button>
+    </div>
+  </div>
+
+  <!-- File hashing -->
+  <div class="card">
+    <h2><span class="icon">📁</span> 文件哈希</h2>
+    <div class="drop-zone" id="drop-zone">
+      <p>拖放文件到此处，或 <span class="browse" id="file-browse">点击选择文件</span></p>
+      <p style="font-size:.8rem;margin-top:4px;">文件在浏览器中读取，不会上传到服务器</p>
+      <input type="file" id="file-input" hidden>
+    </div>
+    <p class="filename" id="file-name" style="margin-top:8px;color:var(--cta);font-family:var(--font-mono);font-size:.85rem;"></p>
+    <div class="result-box" style="margin-top:8px;">
+      <span class="label" id="file-alg-label">SHA-256</span>
+      <span class="value" id="file-result">—</span>
+      <button class="copy-btn" id="file-copy-btn" disabled>复制</button>
+    </div>
+  </div>
+
+  <!-- HMAC -->
+  <div class="card">
+    <h2><span class="icon">🔐</span> HMAC 消息认证</h2>
+    <div class="hmac-grid">
+      <div class="input-group full">
+        <label>HMAC 算法</label>
+        <div class="alg-selector" id="hmac-alg-selector">
+          <button class="alg-chip active" data-alg="sha256">HMAC-SHA-256</button>
+          <button class="alg-chip" data-alg="sha512">HMAC-SHA-512</button>
+        </div>
+      </div>
+      <div class="input-group">
+        <label>密钥 (Key)</label>
+        <input type="text" id="hmac-key" placeholder="输入密钥…">
+      </div>
+      <div class="input-group">
+        <label>消息 (Message)</label>
+        <input type="text" id="hmac-message" placeholder="输入消息…">
+      </div>
+      <div class="result-box full">
+        <span class="label" id="hmac-alg-label">HMAC-SHA-256</span>
+        <span class="value" id="hmac-result">—</span>
+        <button class="copy-btn" id="hmac-copy-btn" disabled>复制</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  hashbox by Tinkora · MIT License · <a href="https://github.com/Tinkora/hashbox" target="_blank" rel="noopener">GitHub</a>
+  · 所有计算在浏览器 WASM 中完成，数据不会离开你的设备
+</footer>
+
+<div class="toast" id="toast">已复制到剪贴板</div>
+
+<script type="module">
+  // ── State ──
+  let currentAlg = 'sha256';
+  let currentHmacAlg = 'sha256';
+  let wasmReady = false;
+  let fileBytes = null;
+
+  // ── Helpers ──
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => document.querySelectorAll(s);
+
+  function toast(msg) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 1800);
+  }
+
+  async function copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('已复制到剪贴板');
+    } catch {
+      // Fallback
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      toast('已复制到剪贴板');
+    }
+  }
+
+  // ── WASM init ──
+  async function initWasm() {
+    try {
+      const wasm = await import('./pkg/hashbox_web.js');
+      await wasm.default();
+      window.hashbox = wasm;
+      wasmReady = true;
+      updateTextHash();
+      updateHmacResult();
+    } catch (e) {
+      console.error('WASM init failed:', e);
+      $('#text-result').textContent = 'WASM 加载失败，请检查 pkg/ 目录';
+    }
+  }
+
+  // ── Algorithm helpers ──
+  function selectAlg(containerSel, alg) {
+    const container = $(containerSel);
+    container.querySelectorAll('.alg-chip').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.alg === alg);
+    });
+  }
+
+  // ── Text hashing (debounced live) ──
+  let textTimer = null;
+  function updateTextHash() {
+    if (!wasmReady) return;
+    const text = $('#text-input').value;
+    if (text === '') {
+      $('#text-result').textContent = '—';
+      $('#text-copy-btn').disabled = true;
+      return;
+    }
+    try {
+      const hex = window.hashbox.wasmHashText(currentAlg, text);
+      $('#text-result').textContent = hex;
+      $('#text-alg-label').textContent = currentAlg.toUpperCase().replace(/^SHA/, 'SHA-');
+      $('#text-copy-btn').disabled = false;
+    } catch (e) {
+      $('#text-result').textContent = '错误: ' + (e.message || e);
+      $('#text-copy-btn').disabled = true;
+    }
+  }
+
+  function updateHmacResult() {
+    if (!wasmReady) return;
+    const key = $('#hmac-key').value;
+    const msg = $('#hmac-message').value;
+    if (!key || !msg) {
+      $('#hmac-result').textContent = '—';
+      $('#hmac-copy-btn').disabled = true;
+      return;
+    }
+    try {
+      const encoder = new TextEncoder();
+      const hex = window.hashbox.wasmHmac(currentHmacAlg, encoder.encode(key), encoder.encode(msg));
+      $('#hmac-result').textContent = hex;
+      $('#hmac-alg-label').textContent = 'HMAC-' + currentHmacAlg.toUpperCase().replace(/^SHA/, 'SHA-');
+      $('#hmac-copy-btn').disabled = false;
+    } catch (e) {
+      $('#hmac-result').textContent = '错误: ' + (e.message || e);
+      $('#hmac-copy-btn').disabled = true;
+    }
+  }
+
+  // ── File hashing ──
+  async function hashFile(file) {
+    if (!wasmReady) return;
+    try {
+      const buf = await file.arrayBuffer();
+      fileBytes = new Uint8Array(buf);
+      const hex = window.hashbox.wasmHash(currentAlg, fileBytes);
+      $('#file-result').textContent = hex;
+      $('#file-alg-label').textContent = currentAlg.toUpperCase().replace(/^SHA/, 'SHA-');
+      $('#file-copy-btn').disabled = false;
+    } catch (e) {
+      $('#file-result').textContent = '错误: ' + (e.message || e);
+      $('#file-copy-btn').disabled = true;
+    }
+  }
+
+  // ── Event bindings ──
+  $('#alg-selector').addEventListener('click', (e) => {
+    const btn = e.target.closest('.alg-chip');
+    if (!btn) return;
+    currentAlg = btn.dataset.alg;
+    selectAlg('#alg-selector', currentAlg);
+    updateTextHash();
+    if (fileBytes) {
+      $('#file-result').textContent = '计算中…';
+      const hex = window.hashbox.wasmHash(currentAlg, fileBytes);
+      $('#file-result').textContent = hex;
+      $('#file-alg-label').textContent = currentAlg.toUpperCase().replace(/^SHA/, 'SHA-');
+      $('#file-copy-btn').disabled = false;
+    }
+    $('#file-alg-label').textContent = currentAlg.toUpperCase().replace(/^SHA/, 'SHA-');
+  });
+
+  $('#hmac-alg-selector').addEventListener('click', (e) => {
+    const btn = e.target.closest('.alg-chip');
+    if (!btn) return;
+    currentHmacAlg = btn.dataset.alg;
+    selectAlg('#hmac-alg-selector', currentHmacAlg);
+    updateHmacResult();
+  });
+
+  $('#text-input').addEventListener('input', () => {
+    clearTimeout(textTimer);
+    textTimer = setTimeout(updateTextHash, 80);
+  });
+
+  $('#text-copy-btn').addEventListener('click', () => {
+    copyToClipboard($('#text-result').textContent);
+  });
+
+  $('#file-copy-btn').addEventListener('click', () => {
+    copyToClipboard($('#file-result').textContent);
+  });
+
+  $('#hmac-copy-btn').addEventListener('click', () => {
+    copyToClipboard($('#hmac-result').textContent);
+  });
+
+  $('#hmac-key').addEventListener('input', updateHmacResult);
+  $('#hmac-message').addEventListener('input', updateHmacResult);
+
+  // Drop zone
+  const dz = $('#drop-zone');
+  const fi = $('#file-input');
+  const fb = $('#file-browse');
+
+  fb.addEventListener('click', (e) => { e.stopPropagation(); fi.click(); });
+  dz.addEventListener('click', () => fi.click());
+
+  dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dz.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      $('#file-name').textContent = '📄 ' + files[0].name + ' (' + formatBytes(files[0].size) + ')';
+      hashFile(files[0]);
+    }
+  });
+
+  fi.addEventListener('change', () => {
+    if (fi.files.length > 0) {
+      $('#file-name').textContent = '📄 ' + fi.files[0].name + ' (' + formatBytes(fi.files[0].size) + ')';
+      hashFile(fi.files[0]);
+    }
+  });
+
+  function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(2) + ' MB';
+  }
+
+  // ── Boot ──
+  initWasm();
+</script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+{
+  "name": "hashbox",
+  "version": "0.1.0",
+  "description": "Browser-native multi-algorithm hashing toolbox (SHA-256, SHA-512, MD5, BLAKE3). All computation in WASM. Privacy-first — no uploads.",
+  "tools": [
+    {
+      "name": "hash_text",
+      "description": "Hash a UTF-8 text string with the specified algorithm. Returns lowercase hex digest.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string",
+            "enum": ["sha256", "sha384", "sha512", "md5", "blake3"],
+            "default": "sha256",
+            "description": "Hash algorithm key."
+          },
+          "text": {
+            "type": "string",
+            "description": "UTF-8 text to hash."
+          }
+        },
+        "required": ["algorithm", "text"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hash_bytes",
+      "description": "Hash raw bytes (base64-encoded) with the specified algorithm. Returns lowercase hex digest.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string",
+            "enum": ["sha256", "sha384", "sha512", "md5", "blake3"],
+            "default": "sha256",
+            "description": "Hash algorithm key."
+          },
+          "bytes": {
+            "type": "string",
+            "description": "Raw bytes encoded as base64."
+          }
+        },
+        "required": ["algorithm", "bytes"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "hmac",
+      "description": "Compute HMAC (SHA-256 or SHA-512). Returns lowercase hex digest.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string",
+            "enum": ["sha256", "sha512"],
+            "default": "sha256",
+            "description": "HMAC algorithm (sha256 or sha512)."
+          },
+          "key": {
+            "type": "string",
+            "description": "Secret key (non-empty)."
+          },
+          "message": {
+            "type": "string",
+            "description": "Message to authenticate."
+          }
+        },
+        "required": ["algorithm", "key", "message"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_algorithms",
+      "description": "List all supported hash algorithms with their metadata (key, label, output length).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -100,6 +100,11 @@ const mac = wasmHmac('sha256', encoder.encode('secret'), encoder.encode('message
 const algs = wasmListAlgorithms(); // [{ key, label, outputLen }, ...]
 ```
 
+## Commit Language
+
+- Write commit subjects and bodies in English and follow Conventional Commits.
+- This repository-level rule overrides any global preference for another commit-message language.
+
 ## Frontend Design Requirement
 
 - Before creating, modifying, reviewing, or debugging any HTML page or user-facing frontend, invoke the `ui-ux-pro-max` skill.
